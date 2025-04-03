@@ -6,8 +6,6 @@
 #include <thread>
 #include <vector>
 
-// using namespace boost::asio;
-
 class smpp_proxy : public std::enable_shared_from_this<smpp_proxy>
 {
   public:
@@ -62,10 +60,12 @@ class smpp_proxy : public std::enable_shared_from_this<smpp_proxy>
         resolver->async_resolve(
             upstream_host,
             std::to_string(upstream_port_),
-            [self = shared_from_this(), client_socket, server_socket, resolver, upstream_host](const boost::system::error_code& error, boost::asio::ip::tcp::resolver::results_type endpoints) {
+            [self = shared_from_this(), client_socket, server_socket, upstream_host](
+                const boost::system::error_code& error,
+                boost::asio::ip::tcp::resolver::results_type endpoints) {
                 if (!error)
                 {
-                    async_connect(
+                    boost::asio::async_connect(
                         *server_socket,
                         endpoints,
                         [self, client_socket, server_socket, upstream_host](const boost::system::error_code& conn_error, const boost::asio::ip::tcp::endpoint&) {
@@ -95,7 +95,7 @@ class smpp_proxy : public std::enable_shared_from_this<smpp_proxy>
     void start_forwarding(std::shared_ptr<boost::asio::ip::tcp::socket> from, std::shared_ptr<boost::asio::ip::tcp::socket> to)
     {
         auto buffer = std::make_shared<std::vector<uint8_t>>(8192);
-        from->async_read_some(boost::asio::buffer(buffer->data(), buffer->size()), [this, from, to, buffer](const boost::system::error_code& error, size_t length) {
+        from->async_read_some(boost::asio::buffer(*buffer), [this, from, to, buffer](const boost::system::error_code& error, size_t length) {
             if (!error)
             {
                 boost::asio::async_write(*to, boost::asio::buffer(buffer->data(), length), [this, from, to, buffer](const boost::system::error_code& write_error, size_t) {
