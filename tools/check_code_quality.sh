@@ -1,0 +1,1 @@
+clang-tidy-16 -header-filter=.* -p=../build ../*.cpp  --config-file=../.clang-tidy
