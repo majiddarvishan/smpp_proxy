@@ -9,13 +9,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_BUILD_TYPE)
-  # set(CMAKE_BUILD_TYPE Release)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE Release)
+#   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-set(Maintainer "Majid Darvishan (majid.darvishan@peykasa.ir)")
+set(Maintainer "Majid Darvishan (majiddarvishan@outlook.com)")
 
-# add_compile_options(-Werror -Wall -Wno-error=variadic-macros -DADVANCED_NETWORKING)
+# add_compile_options(-Werror -Wall -Wno-error=variadic-macros)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g3 -Wextra -Wshadow -Wno-deprecated -Wall -Wpointer-arith -Wstrict-aliasing -fPIC")
 
 #if want create coverage file
@@ -167,33 +167,6 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
                         PUBLIC
                           prometheus-cpp::pull
                           spdlog::spdlog_header_only
-			                    Boost::asio
+                          Boost::asio
                           Boost::bimap
 )
-
-
-######################## Packaging #########################
-set(CPACK_PACKAGE_NAME "${CMAKE_PROJECT_NAME}-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
-set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH})
-set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
-set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS "on")
-set(CPACK_PACKAGE_VENDOR "PeykAsa")
-set(CPACK_PACKAGE_DESCRIPTION "MessageDispatcher (SMSC Product)")
-set(CPACK_PACKAGE_CONTACT "majid.darvishan@peykasa.ir")
-
-set(MAJOR ${PROJECT_VERSION_MAJOR})
-set(MINOR ${PROJECT_VERSION_MINOR})
-set(PATCH ${PROJECT_VERSION_PATCH})
-
-# install(PROGRAMS ${CMAKE_BINARY_DIR}/src/MessageDispatcher DESTINATION ${INSTDIRBIN} RENAME MessageDispatcher-${MAJOR}.${MINOR}.${PATCH} COMPONENT exe)
-
-# install(CODE "execute_process(COMMAND ln -sf MessageDispatcher-${MAJOR}.${MINOR}.${PATCH} MessageDispatcher
-#                                WORKING_DIRECTORY /tmp
-#                                OUTPUT_QUIET)")
-# install(PROGRAMS /tmp/MessageDispatcher DESTINATION ${INSTDIRBIN} COMPONENT link_exe)
-
-# install(FILES ${CMAKE_SOURCE_DIR}/configs/config.json DESTINATION ${INSTDIRBIN} COMPONENT configs)
-# # install(DIRECTORY ${CMAKE_BINARY_DIR}/log DESTINATION ${RELDIR} COMPONENT log)
-# install(PROGRAMS ${CMAKE_SOURCE_DIR}/../scripts/mtmdd DESTINATION ${SCRIPTDIR} COMPONENT script)
