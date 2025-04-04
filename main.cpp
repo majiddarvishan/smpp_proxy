@@ -1,147 +1,29 @@
-#include <boost/asio.hpp>
-#include <boost/asio/ip/address.hpp>
-#include <boost/asio/ip/tcp.hpp>
 #include <spdlog/spdlog.h>
-
-#include <atomic>
-#include <memory>
-#include <thread>
-#include <vector>
-
-class smpp_proxy : public std::enable_shared_from_this<smpp_proxy>
-{
-  public:
-    smpp_proxy(boost::asio::io_context& io, const std::vector<std::string>& upstream_hosts, int upstream_port)
-        : acceptor_(io, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 4000))
-        , upstream_hosts_(upstream_hosts)
-        , upstream_port_(upstream_port)
-        , io_(io)
-        , round_robin_index_(0)
-    {
-        spdlog::info("SMPP Proxy started on port 4000");
-        start_accept();
-    }
-
-  private:
-    boost::asio::ip::tcp::acceptor acceptor_;
-    std::vector<std::string> upstream_hosts_;
-    int upstream_port_;
-    boost::asio::io_context& io_;
-    std::atomic<size_t> round_robin_index_;
-
-    std::string get_next_upstream_host()
-    {
-        return upstream_hosts_[round_robin_index_.fetch_add(1, std::memory_order_relaxed) % upstream_hosts_.size()];
-    }
-
-    void start_accept()
-    {
-        auto client_socket = std::make_shared<boost::asio::ip::tcp::socket>(acceptor_.get_executor());
-        acceptor_.async_accept(*client_socket, [this, client_socket](const boost::system::error_code& error) {
-            if (!error)
-            {
-                spdlog::info("New connection accepted");
-                client_socket->set_option(boost::asio::ip::tcp::no_delay(true));
-                this->handle_connection(client_socket);
-            }
-            else
-            {
-                spdlog::error("Accept error: {}", error.message());
-            }
-            this->start_accept();
-        });
-    }
-
-    void handle_connection(std::shared_ptr<boost::asio::ip::tcp::socket> client_socket)
-    {
-        auto server_socket = std::make_shared<boost::asio::ip::tcp::socket>(io_);
-        std::string upstream_host = get_next_upstream_host();
-        spdlog::info("Connecting to upstream SMPP server: {}", upstream_host);
-
-        boost::system::error_code ec;
-        boost::asio::ip::address address = boost::asio::ip::make_address(upstream_host, ec);
-        if (ec)
-        {
-            spdlog::error("Invalid upstream IP address {}: {}", upstream_host, ec.message());
-            client_socket->close();
-            return;
-        }
-
-        boost::asio::ip::tcp::endpoint endpoint(address, upstream_port_);
-
-        server_socket->async_connect(endpoint, [self = shared_from_this(), client_socket, server_socket, upstream_host](const boost::system::error_code& conn_error) {
-            if (!conn_error)
-            {
-                if (server_socket->is_open())
-                {
-                    server_socket->set_option(boost::asio::ip::tcp::no_delay(true));
-                }
-                spdlog::info("Connected to upstream SMPP server: {}", upstream_host);
-                self->start_forwarding(client_socket, server_socket);
-                self->start_forwarding(server_socket, client_socket);
-            }
-            else
-            {
-                spdlog::error("Failed to connect to upstream SMPP server {}: {}", upstream_host, conn_error.message());
-                client_socket->close();
-            }
-        });
-    }
-
-    void start_forwarding(std::shared_ptr<boost::asio::ip::tcp::socket> from, std::shared_ptr<boost::asio::ip::tcp::socket> to)
-    {
-        auto buffer = std::make_shared<std::vector<uint8_t>>(8192);
-        from->async_read_some(boost::asio::buffer(*buffer), [this, from, to, buffer](const boost::system::error_code& error, size_t length) {
-            if (!error)
-            {
-                boost::asio::async_write(*to, boost::asio::buffer(buffer->data(), length), [this, from, to, buffer](const boost::system::error_code& write_error, size_t) {
-                    if (!write_error)
-                    {
-                        start_forwarding(from, to);
-                    }
-                    else
-                    {
-                        spdlog::error("Write error: {}", write_error.message());
-                        from->close();
-                        to->close();
-                    }
-                });
-            }
-            else
-            {
-                spdlog::error("Read error: {}", error.message());
-                from->close();
-                to->close();
-            }
-        });
-    }
-};
+#include "buffer_pool.hpp"
+#include "io_context_pool.hpp"
+#include "smpp_proxy.hpp"
 
 int main()
 {
     try
     {
-        boost::asio::io_context io;
-        std::vector<std::string> upstream_hosts = {
-            "127.0.0.1", // You can add more IPs here for round-robin
-        };
-        auto proxy = std::make_shared<smpp_proxy>(io, upstream_hosts, 3000);
+        const size_t thread_count = std::thread::hardware_concurrency();
 
-        std::vector<std::thread> threads;
-        const size_t thread_count = 4;
-        for (size_t i = 0; i < thread_count; ++i)
-        {
-            threads.emplace_back([&io]() { io.run(); });
-        }
+        IOContextPool context_pool(thread_count);
+        context_pool.run();
 
-        for (auto& t : threads)
-        {
-            t.join();
-        }
+        BufferPool buffer_pool;
+        std::vector<std::string> upstream_hosts = { "127.0.0.1" };
+
+        // Only one acceptor using one context
+        auto& main_io = context_pool.get_io_context();
+        auto proxy = std::make_shared<smpp_proxy>(main_io, context_pool, buffer_pool, upstream_hosts, 3000);
+
+        context_pool.join();
     }
-    catch (std::exception& e)
+    catch (const std::exception& ex)
     {
-        spdlog::error("Exception: {}", e.what());
+        spdlog::error("Fatal error: {}", ex.what());
     }
 
     return 0;

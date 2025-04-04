@@ -155,7 +155,8 @@ add_compile_definitions(SERVER_TIME="${SERVER_TIME}")
 # ##################################################################################################
 
 add_executable(${CMAKE_PROJECT_NAME}
-               main.cpp
+                main.cpp
+                smpp_proxy.cpp
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME}
@@ -164,7 +165,7 @@ target_include_directories(${CMAKE_PROJECT_NAME}
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
-                        PUBLIC
+                        PRIVATE
                           prometheus-cpp::pull
                           spdlog::spdlog_header_only
                           Boost::asio
