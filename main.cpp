@@ -1,8 +1,10 @@
 #include <boost/asio.hpp>
+#include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/tcp.hpp>
 #include <spdlog/spdlog.h>
 
 #include <atomic>
-#include <condition_variable>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -56,40 +58,34 @@ class smpp_proxy : public std::enable_shared_from_this<smpp_proxy>
         std::string upstream_host = get_next_upstream_host();
         spdlog::info("Connecting to upstream SMPP server: {}", upstream_host);
 
-        auto resolver = std::make_shared<boost::asio::ip::tcp::resolver>(io_);
-        resolver->async_resolve(
-            upstream_host,
-            std::to_string(upstream_port_),
-            [self = shared_from_this(), client_socket, server_socket, upstream_host](
-                const boost::system::error_code& error,
-                boost::asio::ip::tcp::resolver::results_type endpoints) {
-                if (!error)
+        boost::system::error_code ec;
+        boost::asio::ip::address address = boost::asio::ip::make_address(upstream_host, ec);
+        if (ec)
+        {
+            spdlog::error("Invalid upstream IP address {}: {}", upstream_host, ec.message());
+            client_socket->close();
+            return;
+        }
+
+        boost::asio::ip::tcp::endpoint endpoint(address, upstream_port_);
+
+        server_socket->async_connect(endpoint, [self = shared_from_this(), client_socket, server_socket, upstream_host](const boost::system::error_code& conn_error) {
+            if (!conn_error)
+            {
+                if (server_socket->is_open())
                 {
-                    boost::asio::async_connect(
-                        *server_socket,
-                        endpoints,
-                        [self, client_socket, server_socket, upstream_host](const boost::system::error_code& conn_error, const boost::asio::ip::tcp::endpoint&) {
-                            if (!conn_error)
-                            {
-                                if (server_socket->is_open())
-                                {
-                                    server_socket->set_option(boost::asio::ip::tcp::no_delay(true));
-                                }
-                                spdlog::info("Connected to upstream SMPP server: {}", upstream_host);
-                                self->start_forwarding(client_socket, server_socket);
-                                self->start_forwarding(server_socket, client_socket);
-                            }
-                            else
-                            {
-                                spdlog::error("Failed to connect to upstream SMPP server {}: {}", upstream_host, conn_error.message());
-                            }
-                        });
+                    server_socket->set_option(boost::asio::ip::tcp::no_delay(true));
                 }
-                else
-                {
-                    spdlog::error("Failed to resolve {}: {}", upstream_host, error.message());
-                }
-            });
+                spdlog::info("Connected to upstream SMPP server: {}", upstream_host);
+                self->start_forwarding(client_socket, server_socket);
+                self->start_forwarding(server_socket, client_socket);
+            }
+            else
+            {
+                spdlog::error("Failed to connect to upstream SMPP server {}: {}", upstream_host, conn_error.message());
+                client_socket->close();
+            }
+        });
     }
 
     void start_forwarding(std::shared_ptr<boost::asio::ip::tcp::socket> from, std::shared_ptr<boost::asio::ip::tcp::socket> to)
@@ -126,11 +122,13 @@ int main()
     try
     {
         boost::asio::io_context io;
-        std::vector<std::string> upstream_hosts = { "127.0.0.1" };
+        std::vector<std::string> upstream_hosts = {
+            "127.0.0.1", // You can add more IPs here for round-robin
+        };
         auto proxy = std::make_shared<smpp_proxy>(io, upstream_hosts, 3000);
 
         std::vector<std::thread> threads;
-        const size_t thread_count = 4; // Fixed number of threads for better performance
+        const size_t thread_count = 4;
         for (size_t i = 0; i < thread_count; ++i)
         {
             threads.emplace_back([&io]() { io.run(); });
@@ -145,5 +143,6 @@ int main()
     {
         spdlog::error("Exception: {}", e.what());
     }
+
     return 0;
 }
