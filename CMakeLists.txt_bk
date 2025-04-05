@@ -1,0 +1,39 @@
+cmake_minimum_required(VERSION 3.14)
+project(SmppProxy)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Output directories
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+
+# Dependencies
+find_package(Boost REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
+
+# spdlog (optional if installed globally)
+find_package(spdlog REQUIRED)
+
+# Include directories
+include_directories(include)
+
+# Source files
+file(GLOB_RECURSE SOURCES
+    src/*.cpp
+)
+
+# Executable
+add_executable(smpp_proxy ${SOURCES} main.cpp)
+
+# Link libraries
+target_link_libraries(smpp_proxy
+    Boost::system
+    Threads::Threads
+    spdlog::spdlog
+)
+
+# Include debug info
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    target_compile_definitions(smpp_proxy PRIVATE DEBUG)
+endif()

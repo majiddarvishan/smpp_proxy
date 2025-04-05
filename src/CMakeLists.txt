@@ -1,6 +1,10 @@
+# Source files
+file(GLOB_RECURSE SOURCES
+    *.cpp
+)
+
 add_executable(${CMAKE_PROJECT_NAME}
-                main.cpp
-                smpp_proxy.cpp
+                ${SOURCES}
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME}
