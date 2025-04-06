@@ -14,7 +14,7 @@
 //     , buffer_pool_(buffer_pool)
 //     , upstream_hosts_(upstream_hosts)
 //     , upstream_port_(upstream_port)
-//     , round_robin_index_(0)
+//     , current_upstream_index_(0)
 // {
 //     acceptor_.set_option(ip::tcp::acceptor::reuse_address(true));
 //     spdlog::info("SMPP Proxy started on port 4000");
@@ -22,7 +22,7 @@
 // }
 
 // std::string smpp_proxy::get_next_upstream_host() {
-//     return upstream_hosts_[round_robin_index_.fetch_add(1) % upstream_hosts_.size()];
+//     return upstream_hosts_[current_upstream_index_.fetch_add(1) % upstream_hosts_.size()];
 // }
 
 // void smpp_proxy::start_accept() {
@@ -118,7 +118,7 @@
 //       io_pool_(io_pool),
 //       upstream_hosts_(upstream_hosts),
 //       upstream_port_(upstream_port),
-//       round_robin_index_(0),
+//       current_upstream_index_(0),
 //       buffer_pool_(8192, 1024)
 // {
 //     spdlog::info("SMPP Proxy started on port 4000");
@@ -149,7 +149,7 @@
 
 // std::string SmppProxy::get_next_upstream_host()
 // {
-//     return upstream_hosts_[round_robin_index_++ % upstream_hosts_.size()];
+//     return upstream_hosts_[current_upstream_index_++ % upstream_hosts_.size()];
 // }
 
 // void SmppProxy::handle_connection(std::shared_ptr<tcp::socket> client_socket)
@@ -245,11 +245,12 @@ SmppProxy::SmppProxy(IOContextPool& io_pool,
     const std::vector<std::string>& upstream_hosts,
     int upstream_port,
     int listen_port)
-: acceptor_(io_pool.get_io_context(), boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), listen_port))
+: acceptor_(io_pool.get_next_io_context(), boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), listen_port))
 , io_pool_(io_pool)
 , upstream_hosts_(upstream_hosts)
 , upstream_port_(upstream_port)
-, round_robin_index_(0)
+, current_upstream_index_(0)
+, buffer_pool_(std::make_shared<BufferPool>(8192, 200))
 {
     spdlog::info("SMPP Proxy started on port {}", listen_port);
 }
@@ -261,12 +262,13 @@ void SmppProxy::start()
 
 std::string SmppProxy::get_next_upstream_host()
 {
-    return upstream_hosts_[round_robin_index_.fetch_add(1, std::memory_order_relaxed) % upstream_hosts_.size()];
+    return upstream_hosts_[current_upstream_index_.fetch_add(1, std::memory_order_relaxed) % upstream_hosts_.size()];
 }
 
 void SmppProxy::start_accept()
 {
-    auto client_socket = std::make_shared<tcp::socket>(acceptor_.get_executor());
+    // auto client_socket = std::make_shared<tcp::socket>(acceptor_.get_executor());
+    auto client_socket = std::make_shared<boost::asio::ip::tcp::socket>(io_pool_.get_next_io_context());
     acceptor_.async_accept(*client_socket, [self = shared_from_this(), client_socket](const boost::system::error_code& error) {
         if (!error)
         {
@@ -284,40 +286,55 @@ void SmppProxy::start_accept()
 
 void SmppProxy::handle_connection(std::shared_ptr<tcp::socket> client_socket)
 {
-    std::string upstream_host = get_next_upstream_host();
-
-    auto server_socket = std::make_shared<tcp::socket>(io_pool_.get_io_context());
-    auto resolver = std::make_shared<tcp::resolver>(io_pool_.get_io_context());
-
-    resolver->async_resolve(
-        upstream_host,
-        std::to_string(upstream_port_),
-        [self = shared_from_this(), client_socket, server_socket, resolver, upstream_host](
-            const boost::system::error_code& error,
-            tcp::resolver::results_type endpoints) {
-            if (!error)
-            {
-                boost::asio::async_connect(
-                    *server_socket,
-                    endpoints,
-                    [self, client_socket, server_socket, upstream_host](const boost::system::error_code& conn_error, const tcp::endpoint&) {
-                        if (!conn_error)
-                        {
-                            server_socket->set_option(tcp::no_delay(true));
-                            spdlog::info("Connected to upstream SMPP server: {}", upstream_host);
-
-                            auto connection = std::make_shared<Connection>(client_socket, server_socket);
-                            connection->start();
-                        }
-                        else
-                        {
-                            spdlog::error("Failed to connect to upstream SMPP server {}: {}", upstream_host, conn_error.message());
-                        }
-                    });
-            }
-            else
-            {
-                spdlog::error("Resolve failed for {}: {}", upstream_host, error.message());
+    auto server_host = get_next_upstream_host();
+    auto server_socket = std::make_shared<boost::asio::ip::tcp::socket>(io_pool_.get_next_io_context());
+    server_socket->async_connect(
+        boost::asio::ip::tcp::endpoint(boost::asio::ip::address::from_string(server_host), upstream_port_),
+        [this, client_socket, server_socket](const boost::system::error_code& connect_ec) {
+            if (!connect_ec) {
+                auto connection = std::make_shared<Connection>(client_socket, server_socket, buffer_pool_.get());
+                connection->start();
+            } else {
+                spdlog::warn("Failed to connect to upstream: {}", connect_ec.message());
             }
         });
+
+    // std::string upstream_host = get_next_upstream_host();
+
+    // auto server_socket = std::make_shared<tcp::socket>(io_pool_.get_next_upstream_host());
+    // auto resolver = std::make_shared<tcp::resolver>(io_pool_.get_io_context());
+
+    // resolver->async_resolve(
+    //     upstream_host,
+    //     std::to_string(upstream_port_),
+    //     [self = shared_from_this(), client_socket, server_socket, resolver, upstream_host](
+    //         const boost::system::error_code& error,
+    //         tcp::resolver::results_type endpoints) {
+    //         if (!error)
+    //         {
+    //             boost::asio::async_connect(
+    //                 *server_socket,
+    //                 endpoints,
+    //                 [self, client_socket, server_socket, upstream_host](const boost::system::error_code& conn_error, const tcp::endpoint&) {
+    //                     if (!conn_error)
+    //                     {
+    //                         server_socket->set_option(tcp::no_delay(true));
+    //                         spdlog::info("Connected to upstream SMPP server: {}", upstream_host);
+
+    //                         auto connection = std::make_shared<Connection>(client_socket, server_socket);
+    //                         connection->start();
+    //                     }
+    //                     else
+    //                     {
+    //                         spdlog::error("Failed to connect to upstream SMPP server {}: {}", upstream_host, conn_error.message());
+    //                     }
+    //                 });
+    //         }
+    //         else
+    //         {
+    //             spdlog::error("Resolve failed for {}: {}", upstream_host, error.message());
+    //         }
+    //     });
 }
+
+

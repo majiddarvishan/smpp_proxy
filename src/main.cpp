@@ -45,7 +45,7 @@ int main()
         proxy->start();
 
         // Handle Ctrl+C / kill signal
-        boost::asio::signal_set signals(io_pool.get_io_context(), SIGINT, SIGTERM);
+        boost::asio::signal_set signals(io_pool.get_next_io_context(), SIGINT, SIGTERM);
         signals.async_wait([&](const boost::system::error_code&, int signal_number) {
             spdlog::warn("Received signal {}, shutting down gracefully...", signal_number);
             io_pool.stop();

@@ -36,7 +36,7 @@ void IOContextPool::join()
     }
 }
 
-boost::asio::io_context& IOContextPool::get_io_context()
+boost::asio::io_context& IOContextPool::get_next_io_context()
 {
     return *io_contexts_[next_io_context_++ % io_contexts_.size()];
 }

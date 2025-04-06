@@ -31,21 +31,21 @@
 
 #pragma once
 
-#include <queue>
-#include <mutex>
 #include <vector>
 #include <memory>
+#include <mutex>
+#include <stack>
 
 class BufferPool
 {
 public:
-    explicit BufferPool(std::size_t buffer_size, std::size_t max_pool_size);
+    BufferPool(std::size_t buffer_size, std::size_t initial_pool_size = 100);
+
     std::shared_ptr<std::vector<uint8_t>> acquire();
     void release(std::shared_ptr<std::vector<uint8_t>> buffer);
 
 private:
-    std::queue<std::shared_ptr<std::vector<uint8_t>>> pool_;
-    std::mutex mutex_;
     std::size_t buffer_size_;
-    std::size_t max_pool_size_;
+    std::stack<std::shared_ptr<std::vector<uint8_t>>> pool_;
+    std::mutex mutex_;
 };

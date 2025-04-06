@@ -7,6 +7,7 @@
 #include <string>
 
 #include "IOContextPool.hpp"
+#include "BufferPool.hpp"
 
 class SmppProxy : public std::enable_shared_from_this<SmppProxy>
 {
@@ -27,5 +28,6 @@ private:
     IOContextPool& io_pool_;
     std::vector<std::string> upstream_hosts_;
     int upstream_port_;
-    std::atomic<size_t> round_robin_index_;
+    std::atomic<size_t> current_upstream_index_;
+    std::shared_ptr<BufferPool> buffer_pool_;
 };

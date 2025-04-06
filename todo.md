@@ -27,7 +27,18 @@ Per-session logging
  Would you like me to also regenerate the test tool (smpp_client) and mock server (smpp_server) with stability improvements to test this setup?
 
 
-
+✅ 1. Networking Optimizations
+✅ 2. Buffer Reuse with Pooling
+✅ 3. IOContextPool Affinity
+✅ 4. Thread Optimizations
+✅ 5. Smart Connection Limits / Backpressure
+✅ 6. Avoid Shared Pointers Where Unnecessary
+✅ 8. Zero-copy Forwarding (Advanced)
+✅ 9. Instrument with Metrics
+- Active connections
+- Buffer usage
+- Latency (read → write)
+- Connection churn
 
 
 

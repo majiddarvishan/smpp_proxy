@@ -21,6 +21,7 @@ private:
                                 [this, self](boost::system::error_code ec, std::size_t length) {
                                     if (!ec)
                                     {
+                                        std::cout << "Received: " << std::string(data_.data(), length) << std::endl;
                                         do_write(length);
                                     }
                                 });

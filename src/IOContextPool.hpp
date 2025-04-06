@@ -54,9 +54,9 @@ public:
 
     void run();
     void stop();
-    void join(); 
+    void join();
 
-    boost::asio::io_context& get_io_context();
+    boost::asio::io_context& get_next_io_context();
 
 private:
     std::vector<std::shared_ptr<boost::asio::io_context>> io_contexts_;
